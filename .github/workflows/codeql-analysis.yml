@@ -28,11 +28,30 @@ jobs:
         with:
           submodules: recursive
 
+      # IINA links against prebuilt mpv/FFmpeg dylibs that are not in the repo;
+      # the project ships a script to fetch them (universal, so they cover the
+      # x86_64 the CodeQL tracer builds as). Run it before init - it only
+      # downloads, nothing worth tracing.
+      - name: Fetch prebuilt dependencies
+        run: other/download_libs.sh
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ github.event.inputs.languages || 'swift' }}
-          build-mode: autobuild
+          build-mode: manual
+
+      # autobuild used "-target iina", which drags in iina-plugin and its
+      # GRMustache SPM package - that is where "no such module 'Mustache'"
+      # came from. Building the app scheme keeps to the main target.
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project iina.xcodeproj \
+            -scheme iina \
+            -destination 'generic/platform=macOS' \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
