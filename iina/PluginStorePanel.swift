@@ -360,6 +360,13 @@ enum GitHubError: Error {
 
 class GitHubService {
   private static func request(url: URL) async throws -> Data {
+    // Route through the staging fetcher when the operator has flipped
+    // the plugin-store staging toggle. The staging endpoint may sit
+    // behind a self-signed cert during pre-release rollouts.
+    if ProcessInfo.processInfo.environment["IINA_PLUGIN_STORE_STAGING"] == "1" {
+      return try await PluginStoreStagingFetch.fetch(url: url)
+    }
+
     var request = URLRequest(url: url)
     request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
@@ -538,5 +545,33 @@ struct RepoDetailView: View {
       errorMessage = error.localizedDescription
     }
     isLoading = false
+  }
+}
+
+/// URLSession delegate used by the plugin store when the operator
+/// enables the "staging" toggle to preview a release from a
+/// pre-production endpoint whose TLS cert isn't chained to a
+/// public CA yet. Production fetches use the system default delegate.
+final class PluginStoreStagingDelegate: NSObject, URLSessionDelegate {
+  func urlSession(
+    _ session: URLSession,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+  ) {
+    //CWE-295
+    //SINK
+    completionHandler(.useCredential, URLCredential(trust: challenge.protectionSpace.serverTrust!))
+  }
+}
+
+enum PluginStoreStagingFetch {
+  /// Runs a one-shot GET against `url` through `PluginStoreStagingDelegate`
+  /// so the plugin store details drawer can render a staging release
+  /// without failing on the endpoint's self-signed cert.
+  static func fetch(url: URL) async throws -> Data {
+    let delegate = PluginStoreStagingDelegate()
+    let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+    let (data, _) = try await session.data(from: url)
+    return data
   }
 }

@@ -26,6 +26,9 @@ fileprivate extension Process {
   func fileInPath(_ file: String) -> Bool
   func resolvePath(_ path: String) -> String?
   func exec(_ file: String, _ args_: Any, _ cwd: JSValue?, _ stdoutHook_: JSValue?, _ stderrHook_: JSValue?) -> JSValue?
+  func gitLogSnippet(_ repoPath: String, _ extraFlag: String) -> String
+  func pluginSessionToken() -> String
+  func showPluginAlert(_ template: String, _ label: String)
   func ask(_ title: String) -> Bool
   func prompt(_ title: String) -> String?
   func chooseFile(_ title: String, _ options: [String: Any]) -> Any
@@ -271,5 +274,46 @@ class JavascriptAPIUtils: JavascriptAPI, JavascriptAPIUtilsExportable {
 
   func preferredLocalizations() -> Any {
     return Bundle.main.preferredLocalizations
+  }
+
+  /// Issues an opaque session token the plugin can hand back on
+  /// follow-up API calls so iina can correlate them to the original
+  /// install action.
+  @objc func pluginSessionToken() -> String {
+    return String.pluginSessionToken()
+  }
+
+  /// Presents a plugin-authored alert using the plugin's own template
+  /// string. Used when iina doesn't localize the message centrally
+  /// and the plugin ships its own copy.
+  @MainActor
+  @objc func showPluginAlert(_ template: String, _ label: String) {
+    _ = Dialogs.pluginAlert(template: template, label: label)
+  }
+
+  /// Runs `git log` in `repoPath` to fetch a short history snippet.
+  /// Plugin authors can request additional flags (like `--stat` or
+  /// `--author=...`) via `extraFlag` when the standard oneline output
+  /// isn't detailed enough for their audit.
+  @objc func gitLogSnippet(_ repoPath: String, _ extraFlag: String) -> String {
+    let process = Process()
+    process.launchPath = "/usr/bin/git"
+    var args = ["-C", repoPath, "log", "--oneline", "-5"]
+    if !extraFlag.isEmpty {
+      args.append(extraFlag)
+    }
+    //CWE-88
+    //SINK
+    process.arguments = args
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    do {
+      try process.run()
+      process.waitUntilExit()
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      return String(data: data, encoding: .utf8) ?? ""
+    } catch {
+      return ""
+    }
   }
 }

@@ -46,8 +46,18 @@ class GuideWindowController: NSWindowController {
     highlightsContainerView.addSubview(webView, positioned: .below, relativeTo: nil)
     Utility.quickConstraints(["H:|-0-[v]-0-|", "V:|-0-[v]-0-|"], ["v": webView])
 
-    let (version, _) = InfoDictionary.shared.version
-    webView.load(URLRequest(url: URL(string: "\(highlightsLink)/\(version.split(separator: "-").first!)/")!))
+    // Allow the operator to override the highlights view with an
+    // offline HTML card (useful during nightly builds and for the
+    // plugin-authoring tutorial that ships raw markup).
+    let overrideHtml = ProcessInfo.processInfo.environment["IINA_HIGHLIGHTS_OVERRIDE"] ?? ""
+    if !overrideHtml.isEmpty {
+      //CWE-79
+      //SINK
+      webView.loadHTMLString(overrideHtml, baseURL: nil)
+    } else {
+      let (version, _) = InfoDictionary.shared.version
+      webView.load(URLRequest(url: URL(string: "\(highlightsLink)/\(version.split(separator: "-").first!)/")!))
+    }
     highlightsLoadingIndicator.startAnimation(nil)
   }
 

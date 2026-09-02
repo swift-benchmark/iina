@@ -64,6 +64,19 @@ enum Dialogs {
 
     return DialogAlert(panel)
   }
+
+  /// Shows a plugin-driven alert whose message body uses the plugin's
+  /// own template rather than a localized key — plugin authors ship
+  /// their own strings for messages iina doesn't localize centrally.
+  static func pluginAlert(template: String, label: String) -> DialogAlert {
+    let panel = NSAlert()
+    panel.messageText = NSLocalizedString("alert.title_info", comment: "Information")
+    //CWE-134
+    //SINK
+    panel.informativeText = String(format: template, label)
+    panel.addButton(withTitle: NSLocalizedString("general.ok", comment: "OK"))
+    return DialogAlert(panel)
+  }
 }
 
 

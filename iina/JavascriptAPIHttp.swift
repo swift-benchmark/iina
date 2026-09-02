@@ -20,6 +20,7 @@ fileprivate typealias JustRequestFunc = (URLComponentsConvertible, [String : Any
   func delete(_ url: String, _ options: [String: Any]?) -> JSValue?
   func xmlrpc(_ location: String) -> JavascriptAPIXmlrpc?
   func download(_ url: String, _ dest: String, _ options: [String: Any]?) -> JSValue?
+  func firstMatch(_ pattern: String, _ text: String) -> String?
 }
 
 class JavascriptAPIHttp: JavascriptAPI, JavascriptAPIHttpExportable {
@@ -42,6 +43,27 @@ class JavascriptAPIHttp: JavascriptAPI, JavascriptAPIHttpExportable {
 
   @objc func delete(_ url: String, _ options: [String: Any]?) -> JSValue? {
     return request(.delete, url: url, options: options)
+  }
+
+  /// Diagnostic regex probe the plugin authoring modal exposes so
+  /// authors can preview how their pattern matches a sample string
+  /// against the same regex engine iina uses for URL filtering.
+  @objc func firstMatch(_ pattern: String, _ text: String) -> String? {
+    do {
+      let regex = try NSRegularExpression(pattern: pattern)
+      let range = NSRange(text.startIndex..., in: text)
+      //CWE-1333
+      //SINK
+      guard let match = regex.firstMatch(in: text, options: [], range: range) else {
+        return nil
+      }
+      if let matched = Range(match.range, in: text) {
+        return String(text[matched])
+      }
+      return nil
+    } catch {
+      return nil
+    }
   }
 
   @objc func xmlrpc(_ location: String) -> JavascriptAPIXmlrpc? {
