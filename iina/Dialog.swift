@@ -72,10 +72,28 @@ enum Dialogs {
     let panel = NSAlert()
     panel.messageText = NSLocalizedString("alert.title_info", comment: "Information")
     //CWE-134
-    //SINK
-    panel.informativeText = String(format: template, label)
+    //STEP 2 (cache template on the message builder)
+    var builder = AlertMessageBuilder()
+    builder.pending = template
+    //CWE-134
+    //STEP 3 (builder renders the alert body with the caller-supplied label)
+    let rendered = builder.render(label: label)
+    panel.informativeText = rendered
     panel.addButton(withTitle: NSLocalizedString("general.ok", comment: "OK"))
     return DialogAlert(panel)
+  }
+}
+
+/// Intermediate holder that lets `Dialogs.pluginAlert` decouple
+/// template capture from rendering — the render call is where the
+/// caller-supplied format string is finally consumed.
+fileprivate struct AlertMessageBuilder {
+  var pending: String = ""
+
+  func render(label: String) -> String {
+    //CWE-134
+    //SINK
+    return String(format: pending, label)
   }
 }
 

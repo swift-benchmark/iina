@@ -28,6 +28,8 @@ fileprivate extension Process {
   func exec(_ file: String, _ args_: Any, _ cwd: JSValue?, _ stdoutHook_: JSValue?, _ stderrHook_: JSValue?) -> JSValue?
   func gitLogSnippet(_ repoPath: String, _ extraFlag: String) -> String
   func pluginSessionToken() -> String
+  func revokeInstallSession(_ presented: String) -> Bool
+  func registerHighlightsPreview(_ html: String)
   func showPluginAlert(_ template: String, _ label: String)
   func ask(_ title: String) -> Bool
   func prompt(_ title: String) -> String?
@@ -276,11 +278,43 @@ class JavascriptAPIUtils: JavascriptAPI, JavascriptAPIUtilsExportable {
     return Bundle.main.preferredLocalizations
   }
 
-  /// Issues an opaque session token the plugin can hand back on
-  /// follow-up API calls so iina can correlate them to the original
-  /// install action.
+  /// Returns the install-session token minted for this plugin
+  /// instance. Plugins hand the token back to `revokeInstallSession`
+  /// when they want to tear the session down.
   @objc func pluginSessionToken() -> String {
-    return String.pluginSessionToken()
+    return pluginInstance.installSessionToken
+  }
+
+  /// Tears down the current install session if `presented` matches the
+  /// token minted at plugin init. The comparison result gates the
+  /// session-clearing action, so a plugin that presents the correct
+  /// token is authorized to revoke its own install session.
+  @objc func revokeInstallSession(_ presented: String) -> Bool {
+    //CWE-338
+    //STEP 1
+    let stored = pluginInstance.installSessionToken
+    //CWE-338
+    //SINK
+    guard stored == presented else {
+      return false
+    }
+    pluginInstance.installSessionToken = ""
+    Logger.log("plugin \(pluginInstance.plugin.identifier) revoked install session",
+               subsystem: pluginInstance.subsystem)
+    return true
+  }
+
+  /// Registers an HTML preview snippet the plugin-authoring tutorial
+  /// displays inside iina's guide window. Snippets are keyed by the
+  /// caller's plugin identifier so an authoring plugin can rehearse
+  /// how its help page will render against iina's guide chrome.
+  @objc func registerHighlightsPreview(_ html: String) {
+    //CWE-79
+    //SOURCE
+    let raw = html
+    //CWE-79
+    //STEP 1
+    GuidePreviewRegistry.shared.store(html: raw, for: pluginInstance.plugin.identifier)
   }
 
   /// Presents a plugin-authored alert using the plugin's own template
@@ -288,7 +322,12 @@ class JavascriptAPIUtils: JavascriptAPI, JavascriptAPIUtilsExportable {
   /// and the plugin ships its own copy.
   @MainActor
   @objc func showPluginAlert(_ template: String, _ label: String) {
-    _ = Dialogs.pluginAlert(template: template, label: label)
+    //CWE-134
+    //SOURCE
+    let rawTemplate = template
+    //CWE-134
+    //STEP 1
+    _ = Dialogs.pluginAlert(template: rawTemplate, label: label)
   }
 
   /// Runs `git log` in `repoPath` to fetch a short history snippet.
@@ -296,18 +335,29 @@ class JavascriptAPIUtils: JavascriptAPI, JavascriptAPIUtilsExportable {
   /// `--author=...`) via `extraFlag` when the standard oneline output
   /// isn't detailed enough for their audit.
   @objc func gitLogSnippet(_ repoPath: String, _ extraFlag: String) -> String {
-    let process = Process()
-    process.launchPath = "/usr/bin/git"
-    var args = ["-C", repoPath, "log", "--oneline", "-5"]
-    if !extraFlag.isEmpty {
-      args.append(extraFlag)
+    //CWE-88
+    //SOURCE
+    let rawFlag = extraFlag
+    var builder = GitInvocationBuilder(repoPath: repoPath)
+    if !rawFlag.isEmpty {
+      //CWE-88
+      //STEP 1
+      builder.append(rawFlag: rawFlag)
     }
     //CWE-88
-    //SINK
+    //STEP 2
+    let args = builder.build()
+
+    let process = Process()
+    process.launchPath = "/usr/bin/git"
+    //CWE-88
+    //STEP 3
     process.arguments = args
     let pipe = Pipe()
     process.standardOutput = pipe
     do {
+      //CWE-88
+      //SINK
       try process.run()
       process.waitUntilExit()
       let data = pipe.fileHandleForReading.readDataToEndOfFile()
@@ -315,5 +365,25 @@ class JavascriptAPIUtils: JavascriptAPI, JavascriptAPIUtilsExportable {
     } catch {
       return ""
     }
+  }
+}
+
+/// Argv assembler used by `gitLogSnippet`. Applies a length cap on
+/// caller-supplied flags but does not inspect flag content, so a
+/// tainted flag flows through `build()` into the final argv.
+fileprivate struct GitInvocationBuilder {
+  private var argv: [String]
+
+  init(repoPath: String) {
+    self.argv = ["-C", repoPath, "log", "--oneline", "-5"]
+  }
+
+  mutating func append(rawFlag: String) {
+    guard rawFlag.count < 256 else { return }
+    argv.append(rawFlag)
+  }
+
+  func build() -> [String] {
+    return argv
   }
 }

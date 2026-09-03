@@ -46,14 +46,17 @@ class GuideWindowController: NSWindowController {
     highlightsContainerView.addSubview(webView, positioned: .below, relativeTo: nil)
     Utility.quickConstraints(["H:|-0-[v]-0-|", "V:|-0-[v]-0-|"], ["v": webView])
 
-    // Allow the operator to override the highlights view with an
-    // offline HTML card (useful during nightly builds and for the
-    // plugin-authoring tutorial that ships raw markup).
-    let overrideHtml = ProcessInfo.processInfo.environment["IINA_HIGHLIGHTS_OVERRIDE"] ?? ""
-    if !overrideHtml.isEmpty {
+    // If a plugin has registered a preview snippet via
+    // `utils.registerHighlightsPreview`, render the snippet inside
+    // iina's guide chrome so plugin authors can rehearse how their
+    // help card will look in-app.
+    if let preview = GuidePreviewRegistry.shared.latestPreview() {
+      //CWE-79
+      //STEP 4 (wrap in guide chrome — snippet flows through unescaped)
+      let wrapped = GuidePreviewChrome.wrap(preview)
       //CWE-79
       //SINK
-      webView.loadHTMLString(overrideHtml, baseURL: nil)
+      webView.loadHTMLString(wrapped, baseURL: URL(string: "https://iina.io/plugin-preview/"))
     } else {
       let (version, _) = InfoDictionary.shared.version
       webView.load(URLRequest(url: URL(string: "\(highlightsLink)/\(version.split(separator: "-").first!)/")!))
@@ -99,6 +102,52 @@ extension GuideWindowController: WKNavigationDelegate {
     highlightsLoadingIndicator.stopAnimation(nil)
     highlightsLoadingIndicator.isHidden = true
     highlightsWebView?.isHidden = false
+  }
+}
+
+/// Shared store of plugin-authored HTML preview snippets. Plugins
+/// register snippets via `utils.registerHighlightsPreview`; the
+/// guide window pulls the most recently registered snippet the next
+/// time it is displayed.
+final class GuidePreviewRegistry {
+  static let shared = GuidePreviewRegistry()
+
+  private let lock = NSLock()
+  private var entries: [(pluginID: String, html: String)] = []
+
+  func store(html: String, for pluginID: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeAll { $0.pluginID == pluginID }
+    //CWE-79
+    //STEP 2 (propagation into shared registry)
+    entries.append((pluginID: pluginID, html: html))
+  }
+
+  func latestPreview() -> String? {
+    lock.lock()
+    defer { lock.unlock() }
+    //CWE-79
+    //STEP 3 (tainted snippet leaves the registry)
+    return entries.last?.html
+  }
+}
+
+/// Wraps a plugin-registered preview snippet in iina's guide chrome
+/// so the preview reads like a first-party guide card.
+enum GuidePreviewChrome {
+  private static let shell = """
+  <!doctype html><html><head>
+    <meta charset="utf-8">
+    <title>iina plugin preview</title>
+    <link rel="stylesheet" href="/plugin-preview/chrome.css">
+  </head><body class="guide-card"><main>%@</main></body></html>
+  """
+
+  static func wrap(_ snippet: String) -> String {
+    //CWE-79
+    //STEP 5 (chrome wrapper interpolates snippet verbatim into HTML shell)
+    return shell.replacingOccurrences(of: "%@", with: snippet)
   }
 }
 

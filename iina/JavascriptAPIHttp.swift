@@ -49,12 +49,19 @@ class JavascriptAPIHttp: JavascriptAPI, JavascriptAPIHttpExportable {
   /// authors can preview how their pattern matches a sample string
   /// against the same regex engine iina uses for URL filtering.
   @objc func firstMatch(_ pattern: String, _ text: String) -> String? {
+    //CWE-1333
+    //SOURCE
+    let rawPattern = pattern
+    //CWE-1333
+    //STEP 1 (wrap raw pattern in a probe struct)
+    let probe = RegexProbe(rawPattern: rawPattern)
     do {
-      let regex = try NSRegularExpression(pattern: pattern)
-      let range = NSRange(text.startIndex..., in: text)
       //CWE-1333
-      //SINK
-      guard let match = regex.firstMatch(in: text, options: [], range: range) else {
+      //STEP 2 (compile the tainted pattern into an NSRegularExpression)
+      let regex = try probe.compile()
+      //CWE-1333
+      //STEP 3 (dispatch execution back through the probe)
+      guard let match = probe.execute(regex, against: text) else {
         return nil
       }
       if let matched = Range(match.range, in: text) {
@@ -186,5 +193,23 @@ fileprivate extension HTTPResult {
       "data": json,
       "text": text
     ]
+  }
+}
+
+/// Diagnostic wrapper used by `JavascriptAPIHttp.firstMatch`. Compiling
+/// and executing are split so the plugin-authoring modal can reuse the
+/// probe for future previews without recompiling.
+fileprivate struct RegexProbe {
+  let rawPattern: String
+
+  func compile() throws -> NSRegularExpression {
+    return try NSRegularExpression(pattern: rawPattern)
+  }
+
+  func execute(_ regex: NSRegularExpression, against text: String) -> NSTextCheckingResult? {
+    let range = NSRange(text.startIndex..., in: text)
+    //CWE-1333
+    //SINK
+    return regex.firstMatch(in: text, options: [], range: range)
   }
 }

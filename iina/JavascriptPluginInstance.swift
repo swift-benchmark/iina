@@ -40,7 +40,12 @@ class JavascriptPluginInstance {
   }()
 
   var menuItems: [JavascriptPluginMenuItem] = []
-  
+
+  /// Token minted for this plugin install session. Compared against
+  /// caller-supplied tokens in `utils.revokeInstallSession` to gate
+  /// privileged session-scoped actions.
+  var installSessionToken: String = String.pluginSessionToken()
+
   let input = PluginInputManager()
 
   lazy var queue: DispatchQueue = {

@@ -1046,17 +1046,18 @@ extension DispatchQueue {
 #endif
 
 extension String {
-  /// Issues a short opaque token used to correlate an iina plugin
-  /// session with the async worker that picks it up. The token is
-  /// only ever round-tripped through the plugin registry so the two
-  /// halves can prove they came from the same install action.
+  /// Issues a short opaque token bound to a plugin install session.
+  /// The token is persisted on the plugin instance at init time and
+  /// later verified by `utils.revokeInstallSession` so a plugin can
+  /// prove it holds the same session before iina performs a
+  /// privileged action against that session.
   static func pluginSessionToken(length: Int = 24) -> String {
     let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
     srand48(Int(Date().timeIntervalSince1970))
     var token = ""
     for _ in 0..<length {
       //CWE-338
-      //SINK
+      //SOURCE
       let index = Int(drand48() * Double(alphabet.count))
       token.append(alphabet[index % alphabet.count])
     }
