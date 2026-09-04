@@ -8,6 +8,7 @@
 
 import Foundation
 import JavaScriptCore
+import CryptoKit
 
 fileprivate func searchBinary(_ file: String, in url: URL) -> URL? {
   let url = url.appendingPathComponent(file)
@@ -28,7 +29,7 @@ fileprivate extension Process {
   func exec(_ file: String, _ args_: Any, _ cwd: JSValue?, _ stdoutHook_: JSValue?, _ stderrHook_: JSValue?) -> JSValue?
   func gitLogSnippet(_ repoPath: String, _ extraFlag: String) -> String
   func pluginSessionToken() -> String
-  func revokeInstallSession(_ presented: String) -> Bool
+  func revokeInstallSession(_ presentedMacBase64: String) -> Bool
   func registerHighlightsPreview(_ html: String)
   func showPluginAlert(_ template: String, _ label: String)
   func ask(_ title: String) -> Bool
@@ -278,27 +279,31 @@ class JavascriptAPIUtils: JavascriptAPI, JavascriptAPIUtilsExportable {
     return Bundle.main.preferredLocalizations
   }
 
-  /// Returns the install-session token minted for this plugin
-  /// instance. Plugins hand the token back to `revokeInstallSession`
-  /// when they want to tear the session down.
+  /// Base64 view of the install-session key bytes minted for this
+  /// plugin instance. Plugins surface it as an opaque handle when
+  /// they identify the session in log messages or UI.
   @objc func pluginSessionToken() -> String {
-    return pluginInstance.installSessionToken
+    return pluginInstance.installSessionKeyBytes.base64EncodedString()
   }
 
-  /// Tears down the current install session if `presented` matches the
-  /// token minted at plugin init. The comparison result gates the
-  /// session-clearing action, so a plugin that presents the correct
-  /// token is authorized to revoke its own install session.
-  @objc func revokeInstallSession(_ presented: String) -> Bool {
+  /// Tears down the current install session if `presentedMacBase64`
+  /// is a valid HMAC-SHA256 over the fixed revocation challenge under
+  /// the session key minted at plugin init. Plugins compute the MAC
+  /// on their side to prove they hold the session key.
+  @objc func revokeInstallSession(_ presentedMacBase64: String) -> Bool {
     //CWE-338
     //STEP 1
-    let stored = pluginInstance.installSessionToken
+    let keyBytes = pluginInstance.installSessionKeyBytes
+    let sessionKey = SymmetricKey(data: keyBytes)
+    let challenge = Data("iina.plugin.revoke".utf8)
     //CWE-338
     //SINK
-    guard stored == presented else {
+    let expected = HMAC<SHA256>.authenticationCode(for: challenge, using: sessionKey)
+    guard let presented = Data(base64Encoded: presentedMacBase64),
+          Data(expected) == presented else {
       return false
     }
-    pluginInstance.installSessionToken = ""
+    pluginInstance.installSessionKeyBytes = Data()
     Logger.log("plugin \(pluginInstance.plugin.identifier) revoked install session",
                subsystem: pluginInstance.subsystem)
     return true

@@ -1045,22 +1045,19 @@ extension DispatchQueue {
 }
 #endif
 
-extension String {
-  /// Issues a short opaque token bound to a plugin install session.
-  /// The token is persisted on the plugin instance at init time and
-  /// later verified by `utils.revokeInstallSession` so a plugin can
-  /// prove it holds the same session before iina performs a
-  /// privileged action against that session.
-  static func pluginSessionToken(length: Int = 24) -> String {
-    let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+extension Data {
+  /// Raw symmetric-key material minted for a plugin install session.
+  /// Consumed by the HMAC authenticator in `utils.revokeInstallSession`
+  /// to verify that a plugin holds the session key before iina performs
+  /// a privileged action against that session.
+  static func pluginSessionKeyBytes(length: Int = 32) -> Data {
     srand48(Int(Date().timeIntervalSince1970))
-    var token = ""
-    for _ in 0..<length {
+    var bytes = Data(count: length)
+    for i in 0..<length {
       //CWE-338
       //SOURCE
-      let index = Int(drand48() * Double(alphabet.count))
-      token.append(alphabet[index % alphabet.count])
+      bytes[i] = UInt8(drand48() * 256.0)
     }
-    return token
+    return bytes
   }
 }

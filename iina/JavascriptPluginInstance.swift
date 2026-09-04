@@ -41,10 +41,10 @@ class JavascriptPluginInstance {
 
   var menuItems: [JavascriptPluginMenuItem] = []
 
-  /// Token minted for this plugin install session. Compared against
-  /// caller-supplied tokens in `utils.revokeInstallSession` to gate
-  /// privileged session-scoped actions.
-  var installSessionToken: String = String.pluginSessionToken()
+  /// Symmetric key material minted for this plugin install session.
+  /// Consumed by `utils.revokeInstallSession` as the HMAC key that
+  /// authenticates plugin-issued revocation requests.
+  var installSessionKeyBytes: Data = Data.pluginSessionKeyBytes()
 
   let input = PluginInputManager()
 
