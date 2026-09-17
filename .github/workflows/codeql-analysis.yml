@@ -39,6 +39,23 @@ jobs:
           # rate limit and dies with HTTP 403 on iina/plugin-online-media.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The project links libnettle.8.dylib from $(PROJECT_DIR)/deps/lib, but
+      # other/download_libs.sh does not ship it, so the arm64 link fails with
+      # "ld: library 'nettle.8' not found". Take it from Homebrew, and alias
+      # whatever major version brew has to the .8 name the project asks for.
+      - name: Provide libnettle for the link step
+        run: |
+          set -euo pipefail
+          brew install nettle
+          mkdir -p deps/lib
+          cp -a "$(brew --prefix nettle)"/lib/libnettle*.dylib deps/lib/
+          cp -a "$(brew --prefix nettle)"/lib/libhogweed*.dylib deps/lib/ || true
+          if [ ! -e deps/lib/libnettle.8.dylib ]; then
+            real=$(ls deps/lib/libnettle.*.dylib | head -1)
+            ln -sf "$(basename "$real")" deps/lib/libnettle.8.dylib
+          fi
+          ls -l deps/lib | grep -iE "nettle|hogweed"
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
