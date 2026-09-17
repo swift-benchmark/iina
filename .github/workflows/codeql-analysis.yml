@@ -34,6 +34,10 @@ jobs:
       # downloads, nothing worth tracing.
       - name: Fetch prebuilt dependencies
         run: other/download_libs.sh
+        env:
+          # Unauthenticated, the script's release lookup hits the runner IP's shared
+          # rate limit and dies with HTTP 403 on iina/plugin-online-media.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
