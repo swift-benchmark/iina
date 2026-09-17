@@ -65,8 +65,16 @@ jobs:
       # autobuild used "-target iina", which drags in iina-plugin and its
       # GRMustache SPM package - that is where "no such module 'Mustache'"
       # came from. Building the app scheme keeps to the main target.
+      # The xcodeproj links 62 versioned dylibs out of deps/lib, and
+      # other/download_libs.sh ships 44 - and the 41 it does not ship are mostly
+      # version skew (the project wants libavcodec.61, libjxl.0.10,
+      # libplacebo.338; the bundle has .63, .0.11, .360). The link stage cannot
+      # be satisfied without rebuilding that bundle, and it runs after every
+      # Swift file has already been compiled and traced. Let the link fail, and
+      # fail this step only if nothing was compiled.
       - name: Build
         run: |
+          set -o pipefail
           xcodebuild build \
             -project iina.xcodeproj \
             -scheme iina \
@@ -75,7 +83,13 @@ jobs:
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" || true
+          n=$(grep -cE "SwiftCompile|CompileSwiftSources" "$RUNNER_TEMP/xcodebuild.log" || true)
+          echo "swift compile tasks traced: $n"
+          if [ "${n:-0}" -eq 0 ]; then
+            echo "nothing was compiled - not a link-only failure" >&2
+            exit 1
+          fi
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
